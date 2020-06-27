@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -19,6 +18,7 @@ type ConfigurationFile struct {
 	Endpoint       string `json:"endpoint"`
 	Username       string `json:"username"`
 	APIKey         string `json:"api-key"`
+	SecretTTL      int    `json:"secret-ttl"`
 	PasswordLength int    `json:"password-length"`
 }
 
@@ -45,7 +45,7 @@ func (ots ConfigurationFile) makeSecrets(numberOfPasswords int) {
 		// Setup query params for request
 		q := req.URL.Query()
 		q.Add("secret", generatedSecret)
-		q.Add("ttl", "36000")
+		q.Add("ttl", string(ots.SecretTTL))
 		req.URL.RawQuery = q.Encode()
 
 		// Create HTTP client with 10sec timeout for responses
@@ -65,7 +65,7 @@ func (ots ConfigurationFile) makeSecrets(numberOfPasswords int) {
 		}
 
 		if resp.StatusCode != 200 {
-			fmt.Println("Error occured during secret generation. OTS service responded with: " + strconv.Itoa(resp.StatusCode) + " " + string(body))
+			fmt.Println("Error occured during secret generation. OTS service responded with: " + string(resp.StatusCode) + " " + string(body))
 			os.Exit(2)
 		}
 
