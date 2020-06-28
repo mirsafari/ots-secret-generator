@@ -8,7 +8,9 @@ The generator was tested on local OTS instance version 0.10.1.-49f3761b-en
 ## Quickstart
 0. Have a running instance of OTS
 1. Create Account and generate an API key on OTS service
-2. Download the binary depending on your host system
+2. Download the binary depending on your host system. You can download pre compiled binaries from this repo
+    - ots-secret-generator : Linux executable
+    - ots-secret-generator.exe : Windows executable
 3. Setup configuration file
 4. Run the binary with flags that point to the configuration file and number of passwords you wish to generate. 
 
