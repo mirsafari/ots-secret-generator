@@ -28,54 +28,52 @@ func (ots ConfigurationFile) isInValid() bool {
 }
 
 // Method that creates HTTP requests to endpoint
-func (ots ConfigurationFile) makeSecrets(numberOfPasswords int) {
-	for i := 0; i < numberOfPasswords; i++ {
-		// Build request
-		// Create POST request to URL
-		req, error := http.NewRequest("POST", ots.Endpoint+"/api/v1/share", nil)
+func (ots ConfigurationFile) makeSecrets(ch chan<- string) {
+	// Build request
+	// Create POST request to URL
+	req, error := http.NewRequest("POST", ots.Endpoint+"/api/v1/share", nil)
 
-		if error != nil {
-			fmt.Println("Error reading request.", error.Error())
-		}
-
-		// Set username and password for request
-		req.SetBasicAuth(ots.Username, ots.APIKey)
-		// Generate random password that will be sent to OTS
-		var generatedSecret = generatePassword(ots.PasswordLength)
-		// Setup query params for request
-		q := req.URL.Query()
-		q.Add("secret", generatedSecret)
-		q.Add("ttl", string(ots.SecretTTL))
-		req.URL.RawQuery = q.Encode()
-
-		// Create HTTP client with 10sec timeout for responses
-		client := &http.Client{Timeout: time.Second * 10}
-
-		// Send request
-		resp, error := client.Do(req)
-		if error != nil {
-			log.Fatal("Error reading response. ", error.Error())
-		}
-		defer resp.Body.Close()
-
-		// Try to read response
-		body, error := ioutil.ReadAll(resp.Body)
-		if error != nil {
-			fmt.Println("Error reading body. ", error.Error())
-		}
-
-		if resp.StatusCode != 200 {
-			fmt.Println("Error occured during secret generation. OTS service responded with: " + string(resp.StatusCode) + " " + string(body))
-			os.Exit(2)
-		}
-
-		// Save response to map as it is a JSON, so we can access fields later
-		var jsonResponse map[string]interface{}
-		json.Unmarshal([]byte(body), &jsonResponse)
-
-		// Print to user generated password and URL to seceret
-		fmt.Println(generatedSecret + " -> " + ots.Endpoint + "/secret/" + jsonResponse["secret_key"].(string))
+	if error != nil {
+		fmt.Println("Error reading request.", error.Error())
 	}
+
+	// Set username and password for request
+	req.SetBasicAuth(ots.Username, ots.APIKey)
+	// Generate random password that will be sent to OTS
+	var newPassword = generatePassword(ots.PasswordLength)
+	// Setup query params for request
+	q := req.URL.Query()
+	q.Add("secret", newPassword)
+	q.Add("ttl", string(ots.SecretTTL))
+	req.URL.RawQuery = q.Encode()
+
+	// Create HTTP client with 10sec timeout for responses
+	client := &http.Client{Timeout: time.Second * 10}
+
+	// Send request
+	resp, error := client.Do(req)
+	if error != nil {
+		log.Fatal("Error reading response. ", error.Error())
+	}
+	defer resp.Body.Close()
+
+	// Try to read response
+	body, error := ioutil.ReadAll(resp.Body)
+	if error != nil {
+		fmt.Println("Error reading body. ", error.Error())
+	}
+
+	if resp.StatusCode != 200 {
+		fmt.Println("Error occured during secret generation. OTS service responded with: " + string(resp.StatusCode) + " " + string(body))
+		os.Exit(2)
+	}
+
+	// Save response to map as it is a JSON, so we can access fields later
+	var jsonResponse map[string]interface{}
+	json.Unmarshal([]byte(body), &jsonResponse)
+
+	// Send generated secret to channel
+	ch <- fmt.Sprintf("%s -> %s/secret/%s", newPassword, ots.Endpoint, jsonResponse["secret_key"].(string))
 
 }
 
@@ -169,11 +167,27 @@ func main() {
 		} else {
 			// Check for OTS endpoint reachability
 			if endpointReachable(ots) {
-				// Start secret generation
-				fmt.Println("Starting secret generation ...")
 				// Create seed for random number generator and call makeSecrets method
 				rand.Seed(time.Now().Unix())
-				ots.makeSecrets(numberOfPasswords)
+
+				// Start secret generation
+				fmt.Println("Starting secret generation ...")
+				// Start timer to get metrics for duration of generating
+				start := time.Now()
+				// Create new channel where makeSecrets method will write responses to
+				ch := make(chan string)
+				// Create new OTS API request for each password
+				for i := 0; i < numberOfPasswords; i++ {
+					// Use goroutine for each API request so requests will will be asynchronous. Pass channel arg where request will be writeen
+					go ots.makeSecrets(ch)
+				}
+
+				// Read all URLs and passwords from channel where makeSecrets writes to
+				for i := 0; i < numberOfPasswords; i++ {
+					fmt.Println(<-ch)
+				}
+				// Print User info that generation is over
+				fmt.Printf("Finished. %.2fs elapsed\n", time.Since(start).Seconds())
 			} else {
 				fmt.Println("Could not connect to OTS serevice.")
 				os.Exit(2)
